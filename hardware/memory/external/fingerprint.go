@@ -11,6 +11,7 @@ import (
 
 	"github.com/jetsetilly/test7800/hardware/memory/external/elf"
 	"github.com/jetsetilly/test7800/hardware/pokey"
+	"github.com/jetsetilly/test7800/hardware/ym2149"
 	"github.com/jetsetilly/test7800/logger"
 )
 
@@ -122,6 +123,42 @@ func FingerprintBlob(filename string, d []uint8, mapper string) (CartridgeInsert
 
 			// list of creator functions for additional chips
 			var chips []func(Context) (OptionalBus, error)
+
+			// lokey-7800-ym
+			hasYM2149 := version >= 4 && (uint16(d[0x42])<<8|uint16(d[0x43])) == 0x0800
+
+			// lokey-7800 32-pin board
+			if hasYM2149 && d[0x40] == 1 {
+				var ym *ym2149.YM2149
+				return CartridgeInsertor{
+					filename: filename,
+					data:     d,
+					creator: func(ctx Context, d []uint8) (Bus, error) {
+						var err error
+						ym, err = ym2149.New(ctx, 0x0800)
+						if err != nil {
+							return nil, err
+						}
+						return NewYMBanked(ctx, d[dataStart:], ym)
+					},
+					Controller: controller,
+					spec:       spec,
+					chips: []func(Context) (OptionalBus, error){
+						func(ctx Context) (OptionalBus, error) {
+							return ym, nil
+						},
+					},
+					UseHSC:     useHSC,
+					UseSavekey: useSavekey,
+				}, nil
+			}
+
+			// plain (non-banked) YM2149 @ $0800
+			if hasYM2149 {
+				chips = append(chips, func(ctx Context) (OptionalBus, error) {
+					return ym2149.New(ctx, 0x0800)
+				})
+			}
 
 			if cartType&0x0001 == 0x0001 {
 				pk := func(ctx Context) (OptionalBus, error) {
