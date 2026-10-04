@@ -7,6 +7,7 @@ import (
 )
 
 // YMBanked implements the lokey-7800-ym project's 32-pin board cartridge
+// (ATF22V10 mapper, up to 512KB ROM via YM Port A bank lines IOA0-IOA4).
 type YMBanked struct {
 	data  [][]byte // 16K banks, front-to-back
 	fixed []byte   // top 32K of the image, fixed at $8000-$ffff
@@ -45,9 +46,12 @@ func (ext *YMBanked) Access(write bool, address uint16, data uint8) (uint8, erro
 	if address < 0x8000 {
 		bank, enabled := ext.ym.PortA()
 		if !enabled {
-			bank = 15
+			// At power-on reset, YM Port A defaults to input (Hi-Z). Five 10k pull-ups
+			// pull IOA0-IOA4 high (%11111 = 31), mirroring the top fixed bank.
+			bank = uint8(len(ext.data) - 1)
 		}
-		idx := int(bank) % len(ext.data)
+		// 5-bit bank selection (IOA0-IOA4). Upper bits are unconnected on the PCB.
+		idx := int(bank&0x1f) % len(ext.data)
 		return ext.data[idx][address-0x4000], nil
 	}
 

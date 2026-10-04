@@ -125,10 +125,11 @@ func FingerprintBlob(filename string, d []uint8, mapper string) (CartridgeInsert
 			var chips []func(Context) (OptionalBus, error)
 
 			// lokey-7800-ym
-			hasYM2149 := version >= 4 && (uint16(d[0x42])<<8|uint16(d[0x43])) == 0x0800
+			hasYM2149 := version >= 4 && (uint16(d[0x42])<<8|uint16(d[0x43]))&0x0800 != 0
+			isYMBanked := d[0x40] == 1 || (hasYM2149 && size > 48*1024 && cartType == 0)
 
 			// lokey-7800 32-pin board
-			if hasYM2149 && d[0x40] == 1 {
+			if isYMBanked {
 				var ym *ym2149.YM2149
 				return CartridgeInsertor{
 					filename: filename,
@@ -158,6 +159,9 @@ func FingerprintBlob(filename string, d []uint8, mapper string) (CartridgeInsert
 				chips = append(chips, func(ctx Context) (OptionalBus, error) {
 					return ym2149.New(ctx, 0x0800)
 				})
+				// a78tool synthesizes bit 2 (0x0004) into cart_type as a legacy YM indicator;
+				// strip it so it is not misinterpreted as Supergame extra RAM.
+				cartType &= ^uint16(0x0004)
 			}
 
 			if cartType&0x0001 == 0x0001 {
