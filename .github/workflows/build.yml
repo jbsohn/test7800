@@ -14,6 +14,8 @@ jobs:
     - name: Install dependencies
       run: |
         brew install go
+        brew install sdl2
+        brew install sdl3
         brew install dylibbundler
     - uses: actions/checkout@v6
     - name: Extract version from Makefile
@@ -39,6 +41,13 @@ jobs:
       run: |
         export DYLD_LIBRARY_PATH="$(brew --prefix sdl2)/lib"
         dylibbundler -x ".package/Test7800.app/Contents/MacOS/$BINARY_NAME" -b -cd -d .package/Test7800.app/Contents/libs
+        cp "$(brew --prefix sdl3)/lib/libSDL3.dylib" .package/Test7800.app/Contents/libs/
+    - name: Sign app bundle
+      run: |
+        codesign --force --sign - .package/Test7800.app/Contents/libs/*.dylib
+        codesign --force --sign - ".package/Test7800.app/Contents/MacOS/$BINARY_NAME"
+        codesign --force --sign - .package/Test7800.app
+        codesign --verify --deep --strict --verbose=2 .package/Test7800.app
     - name: Zip package
       run: |
         cd .package
@@ -46,6 +55,78 @@ jobs:
     - name: Upload package
       uses: actions/upload-artifact@v6
       with:
-        name: Test7800-macOS
+        name: Test7800-macOS-Intel
         path: .package/Test7800.zip
+    - name: Upload binary for universal build
+      uses: actions/upload-artifact@v6
+      with:
+        name: binary-intel
+        path: .package/Test7800.app/Contents/MacOS/${{ env.BINARY_NAME }}
+    - name: Upload libs for universal build
+      uses: actions/upload-artifact@v6
+      with:
+        name: libs-intel
+        path: .package/Test7800.app/Contents/libs/
 
+  build-macos-arm:
+    runs-on: macos-15
+    env:
+      MACOSX_DEPLOYMENT_TARGET: 11.0
+      BINARY_NAME: test7800_darwin_arm64
+    steps:
+    - name: Install dependencies
+      run: |
+        brew install go
+        brew install sdl2
+        brew install sdl3
+        brew install dylibbundler
+    - uses: actions/checkout@v6
+    - name: Extract version from Makefile
+      id: version
+      run: |
+        VERSION=$(awk -F ' = ' '/^version = / {print $2; exit}' Makefile)
+        if [ -z "$VERSION" ]; then
+          echo "Failed to extract version from Makefile" >&2
+          exit 1
+        fi
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+    - name: Build Test7800 (ARM64)
+      run: make release
+    - name: Copy executable to package
+      run: |
+        mkdir -p .package/Test7800.app/Contents/MacOS
+        cp "$BINARY_NAME" .package/Test7800.app/Contents/MacOS/
+    - name: Set plist metadata
+      run: |
+        plutil -insert CFBundleExecutable -string "$BINARY_NAME" .package/Test7800.app/Contents/Info.plist
+        plutil -insert CFBundleShortVersionString -string "${{ steps.version.outputs.version }}" .package/Test7800.app/Contents/Info.plist
+    - name: Run dylibbundler
+      run: |
+        export DYLD_LIBRARY_PATH="$(brew --prefix sdl2)/lib"
+        dylibbundler -x ".package/Test7800.app/Contents/MacOS/$BINARY_NAME" -b -cd -d .package/Test7800.app/Contents/libs
+        cp "$(brew --prefix sdl3)/lib/libSDL3.dylib" .package/Test7800.app/Contents/libs/
+    - name: Sign app bundle
+      run: |
+        codesign --force --sign - .package/Test7800.app/Contents/libs/*.dylib
+        codesign --force --sign - ".package/Test7800.app/Contents/MacOS/$BINARY_NAME"
+        codesign --force --sign - .package/Test7800.app
+        codesign --verify --deep --strict --verbose=2 .package/Test7800.app
+    - name: Zip package
+      run: |
+        cd .package
+        zip -vr Test7800.zip Test7800.app
+    - name: Upload package
+      uses: actions/upload-artifact@v6
+      with:
+        name: Test7800-macOS-AppleSilicon
+        path: .package/Test7800.zip
+    - name: Upload binary for universal build
+      uses: actions/upload-artifact@v6
+      with:
+        name: binary-arm
+        path: .package/Test7800.app/Contents/MacOS/${{ env.BINARY_NAME }}
+    - name: Upload libs for universal build
+      uses: actions/upload-artifact@v6
+      with:
+        name: libs-arm
+        path: .package/Test7800.app/Contents/libs/
